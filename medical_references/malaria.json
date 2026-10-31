@@ -1,0 +1,28 @@
+{
+    "disease": "Malaria",
+    "reference_source": "CDC - Centers for Disease Control and Prevention; WHO; National Centre for Vector Borne Diseases Control, India",
+    "reference_url": "https://www.cdc.gov/malaria/symptoms/index.html",
+    "additional_reference_urls": [
+        "https://www.who.int/news-room/fact-sheets/detail/malaria",
+        "https://ncvbdc.mohfw.gov.in/index4.php?Background=Dark&lang=1&level=0&lid=3700&linkid=425&theme=Green"
+    ],
+    "symptom_categories": {
+        "commonly_documented": [
+            "chills",
+            "vomiting",
+            "high_fever",
+            "sweating",
+            "headache",
+            "nausea",
+            "diarrhoea",
+            "muscle_pain"
+        ],
+        "variable_or_less_typical": []
+    },
+    "generation_settings": {
+        "batch_size": 10,
+        "min_symptoms": 6,
+        "max_symptoms": 8
+    },
+    "notes": "Dataset feature names are provisional mappings to documented malaria symptoms. high_fever maps to fever, muscle_pain maps to muscle aches, and diarrhoea maps to diarrhea. Symptoms can vary between individuals. These combinations are synthetic educational candidates, not medically validated patient records. Malaria diagnosis requires appropriate laboratory testing."
+}

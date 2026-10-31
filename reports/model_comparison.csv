@@ -1,0 +1,7 @@
+Model,Accuracy,Macro_F1
+Random Forest,1.0,1.0
+Decision Tree,1.0,1.0
+Naive Bayes,1.0,1.0
+SVM,1.0,1.0
+KNN,1.0,1.0
+Logistic Regression,1.0,1.0

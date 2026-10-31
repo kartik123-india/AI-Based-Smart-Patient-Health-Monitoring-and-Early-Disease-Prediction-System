@@ -1,0 +1,11 @@
+{
+  "selected_model": "Random Forest",
+  "training_rows": 4920,
+  "symptom_features": 132,
+  "disease_classes": 41,
+  "validation_accuracy": 1.0,
+  "validation_macro_f1": 1.0,
+  "external_test_rows_evaluated": 42,
+  "external_test_accuracy": 0.9761904761904762,
+  "external_test_macro_f1": 0.9837398373983739
+}

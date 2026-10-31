@@ -1,0 +1,10 @@
+prognosis,symptoms,common_symptom_count,variable_symptom_count,reference_source,reference_url,validation_status
+Common Cold,"[""congestion"", ""continuous_sneezing"", ""runny_nose""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""cough"", ""runny_nose"", ""throat_irritation""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""congestion"", ""cough"", ""headache"", ""runny_nose""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""congestion"", ""cough"", ""runny_nose"", ""throat_irritation""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""continuous_sneezing"", ""runny_nose"", ""throat_irritation""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""congestion"", ""continuous_sneezing"", ""runny_nose"", ""throat_irritation""]",,,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""cough"", ""headache"", ""runny_nose"", ""throat_irritation""]",4.0,0.0,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""congestion"", ""continuous_sneezing"", ""cough"", ""runny_nose"", ""throat_irritation""]",5.0,0.0,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY
+Common Cold,"[""congestion"", ""headache"", ""runny_nose""]",3.0,0.0,MedlinePlus - National Library of Medicine,https://medlineplus.gov/commoncold.html,STRUCTURE_VALIDATION_ONLY

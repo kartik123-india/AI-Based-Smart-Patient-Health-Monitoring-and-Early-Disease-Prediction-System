@@ -1,0 +1,43 @@
+Test_Row,Actual,Original_Prediction,Augmented_Prediction,Original_Correct,Augmented_Correct
+0,Fungal infection,Fungal infection,Fungal infection,True,True
+1,Allergy,Allergy,Allergy,True,True
+2,GERD,GERD,GERD,True,True
+3,Chronic cholestasis,Chronic cholestasis,Chronic cholestasis,True,True
+4,Drug Reaction,Drug Reaction,Drug Reaction,True,True
+5,Peptic ulcer diseae,Peptic ulcer diseae,Peptic ulcer diseae,True,True
+6,AIDS,AIDS,AIDS,True,True
+7,Diabetes ,Diabetes ,Diabetes ,True,True
+8,Gastroenteritis,Gastroenteritis,Gastroenteritis,True,True
+9,Bronchial Asthma,Bronchial Asthma,Bronchial Asthma,True,True
+10,Hypertension ,Hypertension ,Hypertension ,True,True
+11,Migraine,Migraine,Migraine,True,True
+12,Cervical spondylosis,Cervical spondylosis,Cervical spondylosis,True,True
+13,Paralysis (brain hemorrhage),Paralysis (brain hemorrhage),Paralysis (brain hemorrhage),True,True
+14,Jaundice,Jaundice,Jaundice,True,True
+15,Malaria,Malaria,Malaria,True,True
+16,Chicken pox,Chicken pox,Chicken pox,True,True
+17,Dengue,Dengue,Dengue,True,True
+18,Typhoid,Typhoid,Typhoid,True,True
+19,hepatitis A,hepatitis A,hepatitis A,True,True
+20,Hepatitis B,Hepatitis B,Hepatitis B,True,True
+21,Hepatitis C,Hepatitis C,Hepatitis C,True,True
+22,Hepatitis D,Hepatitis D,Hepatitis D,True,True
+23,Hepatitis E,Hepatitis E,Hepatitis E,True,True
+24,Alcoholic hepatitis,Alcoholic hepatitis,Alcoholic hepatitis,True,True
+25,Tuberculosis,Tuberculosis,Tuberculosis,True,True
+26,Common Cold,Common Cold,Common Cold,True,True
+27,Pneumonia,Pneumonia,Pneumonia,True,True
+28,Dimorphic hemmorhoids(piles),Dimorphic hemmorhoids(piles),Dimorphic hemmorhoids(piles),True,True
+29,Heart attack,Heart attack,Heart attack,True,True
+30,Varicose veins,Varicose veins,Varicose veins,True,True
+31,Hypothyroidism,Hypothyroidism,Hypothyroidism,True,True
+32,Hyperthyroidism,Hyperthyroidism,Hyperthyroidism,True,True
+33,Hypoglycemia,Hypoglycemia,Hypoglycemia,True,True
+34,Osteoarthristis,Osteoarthristis,Osteoarthristis,True,True
+35,Arthritis,Arthritis,Arthritis,True,True
+36,(vertigo) Paroymsal  Positional Vertigo,(vertigo) Paroymsal  Positional Vertigo,(vertigo) Paroymsal  Positional Vertigo,True,True
+37,Acne,Acne,Acne,True,True
+38,Urinary tract infection,Urinary tract infection,Urinary tract infection,True,True
+39,Psoriasis,Psoriasis,Psoriasis,True,True
+40,Impetigo,Impetigo,Impetigo,True,True
+41,Fungal infection,Impetigo,Fungal infection,False,True

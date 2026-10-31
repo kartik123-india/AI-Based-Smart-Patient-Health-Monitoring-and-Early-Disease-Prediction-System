@@ -1,0 +1,22 @@
+{
+    "disease": "Diabetes",
+    "reference_source": "NIDDK - National Institute of Diabetes and Digestive and Kidney Diseases; MedlinePlus",
+    "reference_url": "https://www.niddk.nih.gov/health-information/diabetes/overview/symptoms-causes",
+    "symptom_categories": {
+        "commonly_documented": [
+            "polyuria",
+            "excessive_hunger",
+            "fatigue",
+            "blurred_and_distorted_vision"
+        ],
+        "variable_or_type_specific": [
+            "weight_loss"
+        ]
+    },
+    "generation_settings": {
+        "batch_size": 10,
+        "min_symptoms": 2,
+        "max_symptoms": 5
+    },
+    "notes": "Dataset feature names are provisional mappings to medical symptoms. polyuria maps to frequent urination; excessive_hunger maps to increased hunger; blurred_and_distorted_vision maps to blurred vision. Weight loss can be associated particularly with type 1 diabetes. Increased thirst, numbness or tingling, and slow-healing sores are not represented by exact matching features in this dataset. This reference does not establish every possible symptom combination as medically valid. Structural validation is not medical validation."
+}

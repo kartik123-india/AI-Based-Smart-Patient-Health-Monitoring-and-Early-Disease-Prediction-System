@@ -1,0 +1,17 @@
+{
+    "disease": "Common Cold",
+    "reference_source": "MedlinePlus - National Library of Medicine",
+    "reference_url": "https://medlineplus.gov/commoncold.html",
+    "symptom_categories": {
+        "commonly_documented": [
+            "continuous_sneezing",
+            "runny_nose",
+            "congestion",
+            "cough",
+            "throat_irritation",
+            "headache"
+        ],
+        "variable_or_less_typical": []
+    },
+    "notes": "Symptoms are mapped provisionally to the educational dataset. The cited MedlinePlus page lists sneezing, stuffy nose, runny nose, sore throat, coughing, and headache. This reference does not establish every possible symptom combination as medically valid."
+}

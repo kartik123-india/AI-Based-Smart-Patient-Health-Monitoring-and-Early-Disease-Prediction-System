@@ -1,0 +1,7 @@
+Synthetic_Label,Original_Label(s),Labels_Match
+Acne,Acne,True
+Alcoholic hepatitis,Hepatitis D,False
+Dimorphic hemmorhoids(piles),Dimorphic hemmorhoids(piles),True
+Dimorphic hemmorhoids(piles),Dimorphic hemmorhoids(piles),True
+Drug Reaction,Drug Reaction,True
+Fungal infection,Fungal infection,True

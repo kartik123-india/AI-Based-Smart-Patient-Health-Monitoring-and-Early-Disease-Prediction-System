@@ -1,0 +1,43 @@
+Actual,Predicted,Top1_Score_Percent,Top2_Score_Percent,Top1_Top2_Margin_Percent,Correct
+Fungal infection,Fungal infection,100.0,0.0,100.0,True
+Allergy,Allergy,100.0,0.0,100.0,True
+GERD,GERD,100.0,0.0,100.0,True
+Chronic cholestasis,Chronic cholestasis,100.0,0.0,100.0,True
+Drug Reaction,Drug Reaction,100.0,0.0,100.0,True
+Peptic ulcer diseae,Peptic ulcer diseae,100.0,0.0,100.0,True
+AIDS,AIDS,100.0,0.0,100.0,True
+Diabetes,Diabetes,100.0,0.0,100.0,True
+Gastroenteritis,Gastroenteritis,100.0,0.0,100.0,True
+Bronchial Asthma,Bronchial Asthma,100.0,0.0,100.0,True
+Hypertension,Hypertension,100.0,0.0,100.0,True
+Migraine,Migraine,100.0,0.0,100.0,True
+Cervical spondylosis,Cervical spondylosis,100.0,0.0,100.0,True
+Paralysis (brain hemorrhage),Paralysis (brain hemorrhage),100.0,0.0,100.0,True
+Jaundice,Jaundice,100.0,0.0,100.0,True
+Malaria,Malaria,100.0,0.0,100.0,True
+Chicken pox,Chicken pox,100.0,0.0,100.0,True
+Dengue,Dengue,100.0,0.0,100.0,True
+Typhoid,Typhoid,100.0,0.0,100.0,True
+hepatitis A,hepatitis A,100.0,0.0,100.0,True
+Hepatitis B,Hepatitis B,100.0,0.0,100.0,True
+Hepatitis C,Hepatitis C,100.0,0.0,100.0,True
+Hepatitis D,Hepatitis D,100.0,0.0,100.0,True
+Hepatitis E,Hepatitis E,100.0,0.0,100.0,True
+Alcoholic hepatitis,Alcoholic hepatitis,100.0,0.0,100.0,True
+Tuberculosis,Tuberculosis,100.0,0.0,100.0,True
+Common Cold,Common Cold,100.0,0.0,100.0,True
+Pneumonia,Pneumonia,100.0,0.0,100.0,True
+Dimorphic hemmorhoids(piles),Dimorphic hemmorhoids(piles),100.0,0.0,100.0,True
+Heart attack,Heart attack,100.0,0.0,100.0,True
+Varicose veins,Varicose veins,100.0,0.0,100.0,True
+Hypothyroidism,Hypothyroidism,100.0,0.0,100.0,True
+Hyperthyroidism,Hyperthyroidism,100.0,0.0,100.0,True
+Hypoglycemia,Hypoglycemia,100.0,0.0,100.0,True
+Osteoarthristis,Osteoarthristis,100.0,0.0,100.0,True
+Arthritis,Arthritis,100.0,0.0,100.0,True
+(vertigo) Paroymsal  Positional Vertigo,(vertigo) Paroymsal  Positional Vertigo,100.0,0.0,100.0,True
+Acne,Acne,100.0,0.0,100.0,True
+Urinary tract infection,Urinary tract infection,100.0,0.0,100.0,True
+Psoriasis,Psoriasis,100.0,0.0,100.0,True
+Impetigo,Impetigo,100.0,0.0,100.0,True
+Fungal infection,Fungal infection,24.0,23.0,1.0,True
