@@ -4,11 +4,30 @@ import os
 import re
 import html
 from pathlib import Path
+from datetime import datetime, timezone
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
 
 import joblib
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
+
+from sklearn.base import clone
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold, cross_validate
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 import database
 
@@ -30,6 +49,86 @@ database.init_db()
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def run_model_benchmark():
+    """Evaluate standard classifiers using stratified CV on Training.csv only."""
+    training_path = BASE_DIR / "dataset" / "Training.csv"
+    if not training_path.exists():
+        raise FileNotFoundError(
+            "dataset/Training.csv was not found. Add the original training dataset."
+        )
+
+    data = pd.read_csv(training_path)
+    target_candidates = [
+        column for column in data.columns
+        if str(column).strip().lower() in {"prognosis", "disease", "target", "label"}
+    ]
+    if not target_candidates:
+        raise ValueError("Could not identify the disease-label column in Training.csv.")
+
+    target_column = target_candidates[0]
+    X = data.drop(columns=[target_column]).fillna(0)
+    y = data[target_column].astype(str).str.strip()
+
+    if X.empty or y.nunique() < 2:
+        raise ValueError("Training.csv does not contain enough features or classes.")
+
+    min_class_count = int(y.value_counts().min())
+    folds = min(5, min_class_count)
+    if folds < 2:
+        raise ValueError("At least two examples per disease class are needed for CV.")
+
+    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
+    models = {
+        "Random Forest": RandomForestClassifier(
+            n_estimators=150, random_state=42, class_weight="balanced",
+            n_jobs=-1
+        ),
+        "Decision Tree": DecisionTreeClassifier(
+            random_state=42, class_weight="balanced"
+        ),
+        "Gaussian Naive Bayes": GaussianNB(),
+        "SVM (RBF)": make_pipeline(
+            StandardScaler(), SVC(kernel="rbf", class_weight="balanced")
+        ),
+        "K-Nearest Neighbors": make_pipeline(
+            StandardScaler(), KNeighborsClassifier(n_neighbors=5)
+        ),
+        "Logistic Regression": make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2000, class_weight="balanced", random_state=42
+            )
+        ),
+    }
+
+    scoring = {
+        "accuracy": "accuracy",
+        "precision_macro": "precision_macro",
+        "recall_macro": "recall_macro",
+        "f1_macro": "f1_macro",
+    }
+
+    results = []
+    for name, estimator in models.items():
+        scores = cross_validate(
+            estimator, X, y, cv=cv, scoring=scoring,
+            n_jobs=1, return_train_score=False, error_score="raise"
+        )
+        results.append({
+            "Model": name,
+            "Accuracy": float(scores["test_accuracy"].mean()),
+            "Precision (macro)": float(scores["test_precision_macro"].mean()),
+            "Recall (macro)": float(scores["test_recall_macro"].mean()),
+            "F1-score (macro)": float(scores["test_f1_macro"].mean()),
+            "F1 std.": float(scores["test_f1_macro"].std()),
+        })
+
+    return pd.DataFrame(results).sort_values(
+        "F1-score (macro)", ascending=False
+    ).reset_index(drop=True), len(data), X.shape[1], y.nunique(), folds
 
 
 if "patient" not in st.session_state:
@@ -241,6 +340,180 @@ def get_health_warnings(heart_rate, systolic, diastolic, spo2, temperature):
     return warnings, notes
 
 
+
+def build_patient_health_pdf(patient, health_history, prediction_history):
+    """Create a compact, readable educational health summary PDF in memory."""
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=10 * mm,
+        bottomMargin=12 * mm,
+        title="Patient Health Summary"
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="ReportSmall",
+        parent=styles["BodyText"],
+        fontSize=7,
+        leading=9,
+        textColor=colors.HexColor("#555555"),
+        spaceAfter=1
+    ))
+    styles.add(ParagraphStyle(
+        name="ReportCell",
+        parent=styles["BodyText"],
+        fontSize=6.5,
+        leading=8,
+        wordWrap="CJK"
+    ))
+    styles.add(ParagraphStyle(
+        name="ReportHeader",
+        parent=styles["BodyText"],
+        fontSize=6.5,
+        leading=8,
+        textColor=colors.white
+    ))
+    story = []
+
+    def safe(value):
+        if value is None or str(value).strip() == "":
+            return "Not recorded"
+        return html.escape(str(value))
+
+    def short_datetime(value):
+        if value is None or str(value).strip() == "":
+            return "Not recorded"
+        raw = str(value).strip()
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.astimezone(timezone.utc)
+            return parsed.strftime("%d %b %Y<br/>%I:%M %p")
+        except (ValueError, TypeError):
+            return safe(raw[:25])
+
+    def cell(value):
+        return Paragraph(safe(value), styles["ReportCell"])
+
+    def style_table(table, header=True, font_size=6.5):
+        commands = [
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C7D0D9")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("FONTSIZE", (0, 0), (-1, -1), font_size),
+        ]
+        if header:
+            commands.extend([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#174B63")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ])
+        table.setStyle(TableStyle(commands))
+
+    story.append(Paragraph("AI Health Monitor", styles["Title"]))
+    story.append(Paragraph("Patient Health Summary Report", styles["Heading2"]))
+    story.append(Paragraph(
+        "Academic prototype only. This report is not a medical diagnosis, "
+        "medical device output, or treatment recommendation.",
+        styles["ReportSmall"]
+    ))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph("Patient Profile", styles["Heading2"]))
+    generated = datetime.now(timezone.utc).strftime("%d %b %Y, %I:%M %p UTC")
+    profile_rows = [
+        [cell("Patient name"), cell(patient.get("full_name"))],
+        [cell("Patient ID"), cell(patient.get("patient_id"))],
+        [cell("Age"), cell(patient.get("age"))],
+        [cell("Gender"), cell(patient.get("gender"))],
+        [cell("Report generated (UTC)"), cell(generated)]
+    ]
+    profile_table = Table(profile_rows, colWidths=[42 * mm, 130 * mm])
+    style_table(profile_table, header=False)
+    profile_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EAF0F5"))
+    ]))
+    story.append(profile_table)
+    story.append(Spacer(1, 5))
+
+    story.append(Paragraph("Health Readings", styles["Heading2"]))
+    if health_history:
+        health_rows = [[
+            Paragraph("Recorded at (UTC)", styles["ReportHeader"]),
+            Paragraph("Heart rate<br/>(BPM)", styles["ReportHeader"]),
+            Paragraph("Systolic<br/>BP", styles["ReportHeader"]),
+            Paragraph("Diastolic<br/>BP", styles["ReportHeader"]),
+            Paragraph("SpO2<br/>(%)", styles["ReportHeader"]),
+            Paragraph("Temperature<br/>(°C)", styles["ReportHeader"])
+        ]]
+        for item in health_history[:30]:
+            health_rows.append([
+                Paragraph(short_datetime(item.get("recorded_at")), styles["ReportCell"]),
+                cell(item.get("heart_rate")),
+                cell(item.get("systolic_bp")),
+                cell(item.get("diastolic_bp")),
+                cell(item.get("spo2")),
+                cell(item.get("temperature"))
+            ])
+        health_table = Table(
+            health_rows,
+            repeatRows=1,
+            colWidths=[43 * mm, 24 * mm, 24 * mm, 24 * mm, 22 * mm, 35 * mm]
+        )
+        style_table(health_table)
+        story.append(health_table)
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(
+            "Readings are manually entered by the patient and are not live sensor measurements.",
+            styles["ReportSmall"]
+        ))
+    else:
+        story.append(Paragraph("No health readings have been saved.", styles["BodyText"]))
+
+    story.append(Spacer(1, 5))
+    story.append(Paragraph("Prediction History", styles["Heading2"]))
+    if prediction_history:
+        prediction_rows = [[
+            Paragraph("Recorded at (UTC)", styles["ReportHeader"]),
+            Paragraph("Confirmed symptoms", styles["ReportHeader"]),
+            Paragraph("Model output (technical only)", styles["ReportHeader"])
+        ]]
+        for item in prediction_history[:20]:
+            prediction_rows.append([
+                Paragraph(short_datetime(item.get("recorded_at")), styles["ReportCell"]),
+                Paragraph(safe(item.get("symptoms")), styles["ReportCell"]),
+                Paragraph(safe(item.get("predicted_class")), styles["ReportCell"])
+            ])
+        prediction_table = Table(
+            prediction_rows,
+            repeatRows=1,
+            colWidths=[38 * mm, 78 * mm, 56 * mm]
+        )
+        style_table(prediction_table)
+        story.append(prediction_table)
+    else:
+        story.append(Paragraph("No prediction history has been saved.", styles["BodyText"]))
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "<b>Important:</b> Disease model outputs and AI-generated content are "
+        "experimental educational information only. They are not clinically "
+        "validated and must not be used to diagnose, treat, or rule out any "
+        "condition. Consult a qualified healthcare professional for health "
+        "concerns. For emergencies, contact local emergency services.",
+        styles["ReportSmall"]
+    ))
+    document.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 # ---------------- PATIENT DASHBOARD ----------------
 
 def patient_dashboard():
@@ -263,12 +536,14 @@ def patient_dashboard():
         f"Age: {patient['age']} | Gender: {patient['gender']}"
     )
 
-    profile_tab, monitoring_tab, prediction_tab, history_tab, assistant_tab = st.tabs([
+    profile_tab, monitoring_tab, prediction_tab, history_tab, assistant_tab, benchmark_tab, report_tab = st.tabs([
         "Patient Profile",
         "Health Monitoring",
         "Disease Prediction",
         "Prediction History",
-        "AI Health Assistant"
+        "AI Health Assistant",
+        "ML Benchmarking",
+        "PDF Health Report"
     ])
 
     # ---------------- PROFILE ----------------
@@ -507,6 +782,132 @@ def patient_dashboard():
                     chart_df[["temperature"]],
                     y_label="Temperature (°C)"
                 )
+
+            # ---------------- PERSONALIZED HEALTH ANALYTICS ----------------
+
+            st.divider()
+            st.subheader("Personalized Health Analytics")
+            st.caption(
+                "Summaries are calculated from your manually entered readings. "
+                "They describe changes in your records and are not medical assessments."
+            )
+
+            period_label = st.selectbox(
+                "Chart time period",
+                ["Last 7 days", "Last 30 days", "Last 90 days", "All available readings"],
+                index=1,
+                key="health_trend_period"
+            )
+
+            latest_timestamp = chart_df.index.max()
+            if period_label == "Last 7 days":
+                period_start = latest_timestamp - pd.Timedelta(days=7)
+            elif period_label == "Last 30 days":
+                period_start = latest_timestamp - pd.Timedelta(days=30)
+            elif period_label == "Last 90 days":
+                period_start = latest_timestamp - pd.Timedelta(days=90)
+            else:
+                period_start = chart_df.index.min()
+
+            period_df = chart_df.loc[chart_df.index >= period_start].copy()
+
+            if period_df.empty:
+                st.info("No readings are available in this selected period.")
+            else:
+                st.markdown("#### Selected-period averages")
+                average_columns = st.columns(5)
+                average_metrics = [
+                    ("Heart rate", "heart_rate", "BPM", 0),
+                    ("Systolic BP", "systolic_bp", "mmHg", 0),
+                    ("Diastolic BP", "diastolic_bp", "mmHg", 0),
+                    ("SpO2", "spo2", "%", 1),
+                    ("Temperature", "temperature", "°C", 1),
+                ]
+                for column, (label, field, unit, decimals) in zip(
+                    average_columns, average_metrics
+                ):
+                    average_value = period_df[field].mean()
+                    column.metric(
+                        label,
+                        f"{average_value:.{decimals}f} {unit}"
+                    )
+
+                st.caption(
+                    f"Based on {len(period_df)} reading(s), from "
+                    f"{period_df.index.min().strftime('%d %b %Y')} to "
+                    f"{period_df.index.max().strftime('%d %b %Y')}."
+                )
+
+                st.markdown("#### Recent 7-day comparison")
+                latest_day = chart_df.index.max().normalize()
+                recent_start = latest_day - pd.Timedelta(days=6)
+                previous_start = latest_day - pd.Timedelta(days=13)
+                recent_week = chart_df.loc[
+                    (chart_df.index >= recent_start)
+                    & (chart_df.index < latest_day + pd.Timedelta(days=1))
+                ]
+                previous_week = chart_df.loc[
+                    (chart_df.index >= previous_start)
+                    & (chart_df.index < recent_start)
+                ]
+
+                if previous_week.empty:
+                    st.info(
+                        "Add readings covering an earlier 7-day period to see "
+                        "a week-to-week comparison."
+                    )
+                else:
+                    comparison_columns = st.columns(5)
+                    for column, (label, field, unit, decimals) in zip(
+                        comparison_columns, average_metrics
+                    ):
+                        current_average = (
+                            recent_week[field].mean() if not recent_week.empty else None
+                        )
+                        previous_average = previous_week[field].mean()
+                        if current_average is None or pd.isna(current_average):
+                            column.metric(label, "No recent data")
+                        else:
+                            difference = current_average - previous_average
+                            column.metric(
+                                label,
+                                f"{current_average:.{decimals}f} {unit}",
+                                delta=f"{difference:+.{decimals}f} {unit} vs prior 7 days",
+                                delta_color="off"
+                            )
+
+                    st.caption(
+                        "The comparison is descriptive only. An increase or decrease "
+                        "is not automatically good or bad; interpret readings with a "
+                        "qualified healthcare professional."
+                    )
+
+                st.markdown("#### Trends for selected period")
+                selected_chart = period_df[
+                    ["heart_rate", "systolic_bp", "diastolic_bp", "spo2", "temperature"]
+                ]
+                trend_tab1, trend_tab2, trend_tab3 = st.tabs([
+                    "Heart Rate & BP", "SpO2", "Temperature"
+                ])
+                with trend_tab1:
+                    st.line_chart(
+                        selected_chart[["heart_rate"]],
+                        y_label="Beats per minute"
+                    )
+                    st.line_chart(
+                        selected_chart[["systolic_bp", "diastolic_bp"]],
+                        y_label="mmHg"
+                    )
+                with trend_tab2:
+                    st.line_chart(
+                        selected_chart[["spo2"]],
+                        y_label="Oxygen saturation (%)"
+                    )
+                with trend_tab3:
+                    st.line_chart(
+                        selected_chart[["temperature"]],
+                        y_label="Temperature (°C)"
+                    )
 
             st.markdown("#### All Saved Health Readings")
 
@@ -757,12 +1158,20 @@ Required JSON format:
                         # an academic demo, not clinically validated thresholds.
                         top_score = None
                         score_margin = None
+                        probabilities = None
+                        top_predictions = []
                         if hasattr(model, "predict_proba"):
                             probabilities = model.predict_proba(input_df)[0]
-                            ranked_scores = sorted(
-                                [float(value) for value in probabilities],
+                            ranked_pairs = sorted(
+                                [
+                                    (str(label).strip(), float(score))
+                                    for label, score in zip(model.classes_, probabilities)
+                                ],
+                                key=lambda item: item[1],
                                 reverse=True
                             )
+                            top_predictions = ranked_pairs[:3]
+                            ranked_scores = [score for _, score in ranked_pairs]
                             if ranked_scores:
                                 top_score = ranked_scores[0]
                             if len(ranked_scores) > 1:
@@ -861,6 +1270,121 @@ Required JSON format:
                                 f"{score_margin * 100:.1f} percentage points."
                             )
 
+                        # Explainable AI: show model ranking and global feature
+                        # importance for the symptoms selected in this case.
+                        with st.expander("Explainable AI — understand the model output"):
+                            st.markdown("**Top three model-ranked classes**")
+                            if top_predictions:
+                                ranking_df = pd.DataFrame(
+                                    [
+                                        {
+                                            "Model-ranked class": label,
+                                            "Relative model score": f"{score * 100:.1f}%"
+                                        }
+                                        for label, score in top_predictions
+                                    ]
+                                )
+                                st.dataframe(
+                                    ranking_df,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+                                st.caption(
+                                    "These are Random Forest score shares, not "
+                                    "medical probabilities or disease risks."
+                                )
+                            else:
+                                st.info(
+                                    "This model does not expose class scores, so "
+                                    "a ranked score explanation is unavailable."
+                                )
+
+                            if hasattr(model, "feature_importances_"):
+                                importance_values = list(model.feature_importances_)
+                                model_features = list(
+                                    getattr(model, "feature_names_in_", features)
+                                )
+                                importance_map = {
+                                    str(name): float(value)
+                                    for name, value in zip(
+                                        model_features, importance_values
+                                    )
+                                }
+                                selected_importance = [
+                                    {
+                                        "Confirmed symptom": symptom.replace(
+                                            "_", " "
+                                        ).title(),
+                                        "Global model importance": (
+                                            importance_map.get(symptom, 0.0) * 100
+                                        )
+                                    }
+                                    for symptom in sorted(all_symptoms)
+                                ]
+                                selected_importance.sort(
+                                    key=lambda item: item["Global model importance"],
+                                    reverse=True
+                                )
+
+                                st.markdown(
+                                    "**Global importance of your confirmed symptoms**"
+                                )
+                                if selected_importance:
+                                    importance_df = pd.DataFrame(
+                                        selected_importance
+                                    )
+                                    importance_df[
+                                        "Global model importance"
+                                    ] = importance_df[
+                                        "Global model importance"
+                                    ].map(lambda value: f"{value:.3f}%")
+                                    st.dataframe(
+                                        importance_df,
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+                                else:
+                                    st.info("No confirmed symptoms to explain.")
+
+                                st.caption(
+                                    "Feature importance describes how the trained "
+                                    "Random Forest used features across its training "
+                                    "process. It is not a case-specific causal "
+                                    "explanation and does not mean a symptom caused "
+                                    "the predicted class."
+                                )
+
+                                global_top = sorted(
+                                    importance_map.items(),
+                                    key=lambda item: item[1],
+                                    reverse=True
+                                )[:10]
+                                with st.expander(
+                                    "View the model's 10 most important features"
+                                ):
+                                    global_df = pd.DataFrame(
+                                        [
+                                            {
+                                                "Feature": name.replace(
+                                                    "_", " "
+                                                ).title(),
+                                                "Global importance": f"{value * 100:.3f}%"
+                                            }
+                                            for name, value in global_top
+                                        ]
+                                    )
+                                    st.dataframe(
+                                        global_df,
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+                            else:
+                                st.info(
+                                    "This model does not expose built-in feature "
+                                    "importance. A feature-level explanation is "
+                                    "not available for this model."
+                                )
+
                         if training_check_available:
                             st.caption(
                                 f"Original training rows containing all selected "
@@ -906,19 +1430,116 @@ Required JSON format:
                         ]:
                             st.session_state.pop(key, None)
 
+    # ---------------- ML MODEL BENCHMARKING ----------------
+
+    with benchmark_tab:
+
+        st.subheader("Machine Learning Model Benchmarking")
+        st.caption(
+            "Compare standard classifiers using stratified cross-validation "
+            "on the original Training.csv dataset."
+        )
+
+        st.warning(
+            "This is an academic benchmark, not clinical validation. "
+            "Results depend on the dataset and may be optimistic if records "
+            "contain duplicated or highly similar symptom patterns."
+        )
+
+        if st.button(
+            "Run 5-fold model comparison",
+            type="primary",
+            key="run_ml_benchmark"
+        ):
+            try:
+                with st.spinner(
+                    "Training and evaluating six models. This may take a few minutes..."
+                ):
+                    benchmark_df, row_count, feature_count, class_count, fold_count = (
+                        run_model_benchmark()
+                    )
+                st.session_state["ml_benchmark_result"] = {
+                    "table": benchmark_df,
+                    "rows": row_count,
+                    "features": feature_count,
+                    "classes": class_count,
+                    "folds": fold_count,
+                }
+            except Exception as exc:
+                st.error(f"Benchmark could not be completed: {exc}")
+
+        benchmark_result = st.session_state.get("ml_benchmark_result")
+        if benchmark_result:
+            st.markdown("#### Dataset overview")
+            metric_cols = st.columns(4)
+            metric_cols[0].metric("Training records", benchmark_result["rows"])
+            metric_cols[1].metric("Features", benchmark_result["features"])
+            metric_cols[2].metric("Disease classes", benchmark_result["classes"])
+            metric_cols[3].metric("CV folds", benchmark_result["folds"])
+
+            st.markdown("#### Cross-validation results")
+            display_df = benchmark_result["table"].copy()
+            metric_columns = [
+                "Accuracy", "Precision (macro)", "Recall (macro)",
+                "F1-score (macro)", "F1 std."
+            ]
+            for column in metric_columns:
+                display_df[column] = display_df[column].map(
+                    lambda value: f"{value * 100:.2f}%"
+                )
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            chart_df = benchmark_result["table"].set_index("Model")[
+                ["Accuracy", "Precision (macro)", "Recall (macro)", "F1-score (macro)"]
+            ]
+            st.markdown("#### Visual model comparison")
+            st.bar_chart(chart_df)
+
+            best_model = benchmark_result["table"].iloc[0]
+            st.info(
+                f"Highest macro F1 in this run: {best_model['Model']} "
+                f"({best_model['F1-score (macro)'] * 100:.2f}%). "
+                "This does not automatically mean it is the best model for "
+                "real-world medical use."
+            )
+
+            st.caption(
+                "The benchmark trains fresh baseline models using stratified "
+                "cross-validation. It does not replace your deployed Random "
+                "Forest model. The separate Testing.csv file is not used in "
+                "this cross-validation comparison."
+            )
+        else:
+            st.info(
+                "Click the button above to run the benchmark. Results are "
+                "cached for this app session to avoid unnecessary repeated training."
+            )
+
     # ---------------- AI HEALTH ASSISTANT ----------------
 
     with assistant_tab:
 
         st.subheader("AI Health Assistant")
         st.caption(
-            "Ask general health questions or request simple explanations "
-            "of your manually entered readings and previous model predictions."
+            "Get general health information, a simple summary of your question, "
+            "home-care information and guidance on when to seek medical attention."
         )
 
         st.info(
-            "Do not enter your name, email, patient ID, or other identifying "
-            "information. Messages are sent to an external AI provider."
+            "Privacy reminder: Do not enter your name, email, patient ID, address, "
+            "or other identifying information. Your question and limited dashboard "
+            "context are sent to OpenRouter, an external AI service."
+        )
+
+        response_language = st.selectbox(
+            "Response language",
+            ["Match my message", "English", "Hindi", "Hinglish"],
+            key="assistant_response_language"
+        )
+
+        st.caption(
+            "The assistant provides educational information only. It cannot diagnose, "
+            "prescribe medicines or replace a qualified healthcare professional."
         )
 
         if "health_assistant_messages" not in st.session_state:
@@ -929,7 +1550,7 @@ Required JSON format:
                 st.markdown(message["content"])
 
         user_question = st.chat_input(
-            "Ask a general health question (English or Hinglish)..."
+            "Ask a general health question (English, Hindi or Hinglish)..."
         )
 
         if user_question:
@@ -948,48 +1569,69 @@ Required JSON format:
                 with st.chat_message("assistant"):
                     st.error(assistant_reply)
             else:
-                health_context = "No saved health readings are available."
                 recent_health = database.get_health_history(patient["patient_id"])
                 if recent_health:
                     latest_health = recent_health[0]
                     health_context = (
-                        "Latest manually entered readings: "
-                        f"heart rate {latest_health['heart_rate']} BPM; "
-                        f"blood pressure {latest_health['systolic_bp']}/"
-                        f"{latest_health['diastolic_bp']} mmHg; "
-                        f"SpO2 {latest_health['spo2']}%; "
-                        f"temperature {latest_health['temperature']} °C."
+                        "Latest manually entered readings (not live sensor data): "
+                        f"heart rate {latest_health.get('heart_rate')} BPM; "
+                        f"blood pressure {latest_health.get('systolic_bp')}/"
+                        f"{latest_health.get('diastolic_bp')} mmHg; "
+                        f"SpO2 {latest_health.get('spo2')}%; "
+                        f"temperature {latest_health.get('temperature')} °C; "
+                        f"recorded at {latest_health.get('recorded_at')}."
                     )
+                else:
+                    health_context = "No saved health readings are available."
 
                 recent_predictions = database.get_prediction_history(
                     patient["patient_id"]
                 )
-                prediction_context = "No saved model predictions are available."
                 if recent_predictions:
-                    latest_prediction = recent_predictions[0]
-                    prediction_context = (
-                        "Most recent educational ML model output: "
-                        f"{latest_prediction.get('predicted_class', 'Not available')}; "
-                        f"symptoms entered: {latest_prediction.get('symptoms', 'Not available')}."
-                    )
+                    prediction_lines = []
+                    for item in recent_predictions[:3]:
+                        prediction_lines.append(
+                            f"Symptoms entered: {item.get('symptoms', 'Not available')}; "
+                            f"educational ML output: {item.get('predicted_class', 'Not available')}; "
+                            f"recorded at: {item.get('recorded_at', 'Not available')}"
+                        )
+                    prediction_context = "Recent educational prediction history: " + " | ".join(prediction_lines)
+                else:
+                    prediction_context = "No saved model predictions are available."
 
-                system_prompt = """
-You are an educational AI Health Assistant inside a college project.
-Answer in clear, simple English or Hinglish matching the user's language.
-You may explain general health concepts and supplied readings or educational
-ML output, but never diagnose, prescribe medicines, recommend dosages, or
-claim certainty. Do not treat the ML prediction as a diagnosis. Encourage a
-qualified healthcare professional for personal medical concerns.
-For severe or potentially life-threatening symptoms (such as chest pain,
-severe breathing difficulty, fainting, stroke signs, or heavy bleeding), advise
-urgent local emergency medical help immediately. Do not falsely reassure.
-Keep answers concise and practical. Do not ask for personally identifying data.
-This is an academic prototype, not a medical device.
+                language_instruction = {
+                    "Match my message": "Reply in the same language and style as the user's latest message.",
+                    "English": "Reply in simple English.",
+                    "Hindi": "Reply in simple Hindi using Devanagari script.",
+                    "Hinglish": "Reply in simple conversational Hinglish using Latin script."
+                }[response_language]
+
+                system_prompt = f"""
+You are an educational AI Health Assistant in a college academic prototype.
+{language_instruction}
+
+For each health-related question, use these headings when relevant:
+1. **Understanding your concern** - briefly restate the question or symptoms without adding symptoms.
+2. **General information** - explain possible general meanings; do not identify a definite disease.
+3. **General self-care** - give low-risk, non-medicine guidance only when appropriate. Do not recommend prescription or OTC medicines, dosages, or treatment plans.
+4. **When to seek medical help** - explain when the user should contact a qualified healthcare professional.
+5. **Urgent warning** - if the user describes chest pain, severe breathing difficulty, fainting/unconsciousness, stroke signs, severe allergic reaction, heavy bleeding, or another immediate danger, tell them to seek local emergency medical help now. Do not delay urgent care for further chat.
+
+Safety rules:
+- Never diagnose, prescribe, recommend medicine dosages, or claim certainty.
+- Do not treat the project's machine-learning output as a diagnosis or medical evidence.
+- Dashboard readings are manually entered and may be inaccurate; do not infer a diagnosis from them.
+- Explain that a single reading cannot establish a medical condition.
+- Do not falsely reassure or say a person is safe based only on this limited context.
+- Do not request personally identifying information.
+- Keep the response clear, concise and practical. If the question is not medical, answer normally and briefly.
+- This is an academic prototype, not a medical device.
 """
 
                 context_message = (
-                    "Context from local dashboard (manual data only): "
-                    f"{health_context} {prediction_context}"
+                    "Limited context from the patient's local dashboard. Do not repeat "
+                    "identifying details; none are supplied. "
+                    + health_context + " " + prediction_context
                 )
 
                 try:
@@ -1007,7 +1649,7 @@ This is an academic prototype, not a medical device.
                                 for item in st.session_state.health_assistant_messages[-10:]
                             ]
                         ],
-                        temperature=0.4
+                        temperature=0.3
                     )
                     assistant_reply = (
                         response.choices[0].message.content
@@ -1018,8 +1660,8 @@ This is an academic prototype, not a medical device.
 
                 except Exception as exc:
                     assistant_reply = (
-                        "The AI service could not respond right now. "
-                        "Please try again later. Error: " + str(exc)
+                        "The AI service could not respond right now. Please try again "
+                        "later. Technical detail: " + str(exc)
                     )
                     with st.chat_message("assistant"):
                         st.error(assistant_reply)
@@ -1028,15 +1670,16 @@ This is an academic prototype, not a medical device.
                 {"role": "assistant", "content": assistant_reply}
             )
 
-        if st.button("Clear AI chat", key="clear_health_assistant"):
-            st.session_state.health_assistant_messages = []
-            st.rerun()
-
-        st.caption(
-            "Avoid sharing identifiable or sensitive medical information. "
-            "This assistant provides general educational information, not "
-            "diagnosis or treatment."
-        )
+        clear_col, info_col = st.columns([1, 3])
+        with clear_col:
+            if st.button("Clear AI chat", key="clear_health_assistant"):
+                st.session_state.health_assistant_messages = []
+                st.rerun()
+        with info_col:
+            st.caption(
+                "Avoid sharing identifiable or sensitive medical information. "
+                "For emergencies, contact local emergency services immediately."
+            )
 
     # ---------------- PREDICTION HISTORY ----------------
 
@@ -1073,6 +1716,54 @@ This is an academic prototype, not a medical device.
                 "will appear here."
             )
 
+
+
+    # ---------------- PDF HEALTH REPORT ----------------
+    with report_tab:
+        st.subheader("Downloadable Patient Health Report")
+        st.caption(
+            "Create a PDF summary of your profile, manually entered health "
+            "readings and saved educational model predictions."
+        )
+        report_health = database.get_health_history(patient["patient_id"])
+        report_predictions = database.get_prediction_history(patient["patient_id"])
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Saved health readings", len(report_health))
+        col2.metric("Saved predictions", len(report_predictions))
+        col3.metric("Readings included", min(len(report_health), 30))
+
+        st.info(
+            "The report includes up to the latest 30 health readings and 20 "
+            "prediction records. It contains sensitive personal information; "
+            "download and share it only with the patient's permission."
+        )
+
+        if st.button("Generate PDF Health Report", type="primary"):
+            try:
+                pdf_bytes = build_patient_health_pdf(
+                    patient,
+                    report_health,
+                    report_predictions
+                )
+                st.session_state["patient_health_pdf"] = pdf_bytes
+                st.success("Your PDF report is ready.")
+            except Exception as exc:
+                st.error(f"Could not generate the PDF report: {exc}")
+
+        if st.session_state.get("patient_health_pdf"):
+            patient_code = re.sub(
+                r"[^A-Za-z0-9_-]",
+                "_",
+                str(patient.get("patient_id", "patient"))
+            )
+            st.download_button(
+                label="Download Patient Health Report (PDF)",
+                data=st.session_state["patient_health_pdf"],
+                file_name=f"health_report_{patient_code}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 # ---------------- APPLICATION ENTRY ----------------
 
